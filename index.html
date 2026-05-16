@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>基于BERT与LightGBM的人岗匹配系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+    body { font-family: 'Noto Sans SC', sans-serif; }
+    .gradient-bg { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 50%, #0ea5e9 100%); }
+    .card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .metric-best { background: linear-gradient(135deg, #10b981, #059669); color: white; border-radius: 6px; padding: 2px 8px; font-weight: 600; }
+    .step-circle { width: 36px; height: 36px; border-radius: 50%; background: #2563eb; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .progress-bar { height: 8px; border-radius: 4px; background: #e5e7eb; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .loading-dots span { animation: blink 1.4s infinite; }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%,80%,100%{opacity:0} 40%{opacity:1} }
+    .result-card { border: 2px solid transparent; transition: all 0.3s; }
+    .result-card.positive { border-color: #10b981; background: #f0fdf4; }
+    .result-card.negative { border-color: #ef4444; background: #fef2f2; }
+    .section-anchor { scroll-margin-top: 80px; }
+    nav { backdrop-filter: blur(10px); background: rgba(255,255,255,0.9); }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+  <!-- 导航栏 -->
+  <nav class="fixed top-0 left-0 right-0 z-50 border-b border-gray-200">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🎯</span>
+        <span class="font-bold text-gray-800 text-lg">人岗匹配系统</span>
+      </div>
+      <div class="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
+        <a href="#intro" class="hover:text-blue-600 transition-colors">论文介绍</a>
+        <a href="#model" class="hover:text-blue-600 transition-colors">模型架构</a>
+        <a href="#results" class="hover:text-blue-600 transition-colors">实验结果</a>
+        <a href="#demo" class="hover:text-blue-600 transition-colors">在线预测</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero 区域 -->
+  <section class="gradient-bg pt-24 pb-16 text-white">
+    <div class="max-w-4xl mx-auto px-4 text-center">
+      <div class="inline-block bg-white/20 rounded-full px-4 py-1 text-sm mb-4 font-medium">
+        📄 计算机科学与应用 · 2025年1月
+      </div>
+      <h1 class="text-3xl md:text-5xl font-bold mb-4 leading-tight">
+        基于 BERT 与 LightGBM 的<br class="hidden md:block"/>人岗匹配模型
+      </h1>
+      <p class="text-blue-100 text-lg mb-2">A Person-Job Matching Model Based on BERT and LightGBM</p>
+      <p class="text-blue-200 text-sm mb-8">
+        段雪艳 · 吕卫东* · 冯俊磊 · 郝月华 &nbsp;|&nbsp; 兰州交通大学数理学院
+      </p>
+      <div class="flex flex-wrap justify-center gap-3 mb-10">
+        <span class="tag bg-white/20 text-white">BERT 文本语义特征</span>
+        <span class="tag bg-white/20 text-white">LightGBM 分类器</span>
+        <span class="tag bg-white/20 text-white">人岗智能匹配</span>
+        <span class="tag bg-white/20 text-white">天池竞赛数据集</span>
+      </div>
+      <div class="flex flex-wrap justify-center gap-6">
+        <div class="bg-white/15 rounded-xl px-6 py-4 text-center">
+          <div class="text-3xl font-bold">0.886</div>
+          <div class="text-blue-200 text-sm mt-1">投递预测准确率</div>
+        </div>
+        <div class="bg-white/15 rounded-xl px-6 py-4 text-center">
+          <div class="text-3xl font-bold">0.926</div>
+          <div class="text-blue-200 text-sm mt-1">认可预测准确率</div>
+        </div>
+        <div class="bg-white/15 rounded-xl px-6 py-4 text-center">
+          <div class="text-3xl font-bold">87M</div>
+          <div class="text-blue-200 text-sm mt-1">BERT 参数量</div>
+        </div>
+        <div class="bg-white/15 rounded-xl px-6 py-4 text-center">
+          <div class="text-3xl font-bold">92</div>
+          <div class="text-blue-200 text-sm mt-1">最终特征维度</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="max-w-6xl mx-auto px-4 py-12 space-y-16">
+
+    <!-- 论文介绍 -->
+    <section id="intro" class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span class="text-blue-600">01</span>
+        <span>研究背景与动机</span>
+      </h2>
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="card p-6">
+          <div class="text-3xl mb-3">⚠️</div>
+          <h3 class="font-bold text-gray-800 mb-2">问题背景</h3>
+          <p class="text-gray-600 text-sm leading-relaxed">
+            求职招聘市场中，信息不对称导致"逆向选择"，加大了企业招聘和求职者求职的难度。线上招聘平台在疫情时期更加重要，对人岗匹配精度要求更高。
+          </p>
+        </div>
+        <div class="card p-6">
+          <div class="text-3xl mb-3">🔬</div>
+          <h3 class="font-bold text-gray-800 mb-2">传统方法局限</h3>
+          <p class="text-gray-600 text-sm leading-relaxed">
+            传统 TF-IDF、Word2Vec 词向量方法难以捕捉深层语义。本文引入 BERT 模型，能更好地读取上下文语义信息，提升匹配精度。
+          </p>
+        </div>
+        <div class="card p-6">
+          <div class="text-3xl mb-3">💡</div>
+          <h3 class="font-bold text-gray-800 mb-2">本文贡献</h3>
+          <p class="text-gray-600 text-sm leading-relaxed">
+            将 BERT 模型引入人岗匹配领域，结合 LightGBM 分类器，在两个预测任务上均显著优于传统机器学习基线模型。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据集信息 -->
+    <section class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span class="text-blue-600">02</span>
+        <span>数据集与特征工程</span>
+      </h2>
+      <div class="card p-6 mb-6">
+        <div class="flex items-start gap-4 mb-4">
+          <div class="bg-blue-100 text-blue-700 rounded-lg p-3 text-2xl">📊</div>
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">天池竞赛数据集</h3>
+            <p class="text-gray-500 text-sm">"大数据智能云编程大赛——人岗智能匹配挑战赛"</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div class="bg-blue-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-blue-600">4,122</div>
+            <div class="text-gray-500 text-sm mt-1">求职者</div>
+          </div>
+          <div class="bg-indigo-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-indigo-600">33,340</div>
+            <div class="text-gray-500 text-sm mt-1">岗位</div>
+          </div>
+          <div class="bg-purple-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-purple-600">53,458</div>
+            <div class="text-gray-500 text-sm mt-1">行为记录</div>
+          </div>
+          <div class="bg-green-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-green-600">235,474</div>
+            <div class="text-gray-500 text-sm mt-1">人才-岗位配对</div>
+          </div>
+        </div>
+
+        <!-- 特征体系 -->
+        <h4 class="font-bold text-gray-800 mb-3">特征体系（共 92 维）</h4>
+        <div class="grid md:grid-cols-5 gap-3">
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xl font-bold text-gray-700">11</div>
+            <div class="text-gray-500 text-xs mt-1">岗位基础特征</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xl font-bold text-gray-700">15</div>
+            <div class="text-gray-500 text-xs mt-1">人才简历特征</div>
+          </div>
+          <div class="bg-blue-50 rounded-lg p-3 text-center border-2 border-blue-200">
+            <div class="text-xl font-bold text-blue-600">20</div>
+            <div class="text-blue-500 text-xs mt-1">BERT 文本特征</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xl font-bold text-gray-700">6</div>
+            <div class="text-gray-500 text-xs mt-1">交叉特征</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xl font-bold text-gray-700">42</div>
+            <div class="text-gray-500 text-xs mt-1">统计特征</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模型架构 -->
+    <section id="model" class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span class="text-blue-600">03</span>
+        <span>模型架构</span>
+      </h2>
+
+      <div class="card p-8">
+        <div class="flex flex-col md:flex-row items-center gap-4 justify-center">
+          <!-- 输入 -->
+          <div class="flex flex-col gap-3 items-center">
+            <div class="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 text-center w-44">
+              <div class="text-2xl mb-1">📝</div>
+              <div class="font-bold text-amber-700 text-sm">岗位要求</div>
+              <div class="text-gray-400 text-xs mt-1">文本描述</div>
+            </div>
+            <div class="bg-teal-50 border-2 border-teal-200 rounded-xl p-4 text-center w-44">
+              <div class="text-2xl mb-1">👤</div>
+              <div class="font-bold text-teal-700 text-sm">工作经历</div>
+              <div class="text-gray-400 text-xs mt-1">简历文本</div>
+            </div>
+          </div>
+
+          <div class="text-gray-400 text-2xl">→</div>
+
+          <!-- BERT -->
+          <div class="bg-blue-50 border-2 border-blue-300 rounded-xl p-5 text-center w-48">
+            <div class="text-2xl mb-1">🤖</div>
+            <div class="font-bold text-blue-700">chinese-RoBERTa</div>
+            <div class="text-gray-500 text-xs mt-2">hfl/chinese-roberta-wwm-ext</div>
+            <div class="mt-3 space-y-1 text-xs text-gray-500">
+              <div class="bg-white rounded px-2 py-1">BertEmbeddings</div>
+              <div class="bg-white rounded px-2 py-1">BertEncoder (12层)</div>
+              <div class="bg-white rounded px-2 py-1">BertPooler [CLS]</div>
+            </div>
+            <div class="mt-2 text-blue-600 font-bold text-sm">↓ 768维向量</div>
+          </div>
+
+          <div class="text-gray-400 text-2xl">→</div>
+
+          <!-- 拼接 -->
+          <div class="bg-purple-50 border-2 border-purple-200 rounded-xl p-5 text-center w-44">
+            <div class="text-2xl mb-1">⊕</div>
+            <div class="font-bold text-purple-700">特征拼接</div>
+            <div class="text-xs text-gray-500 mt-2 space-y-1">
+              <div>BERT向量 × 2</div>
+              <div>基础特征</div>
+              <div>交叉特征</div>
+              <div>统计特征</div>
+            </div>
+            <div class="mt-2 text-purple-600 font-bold text-sm">→ 92维</div>
+          </div>
+
+          <div class="text-gray-400 text-2xl">→</div>
+
+          <!-- LightGBM -->
+          <div class="bg-green-50 border-2 border-green-300 rounded-xl p-5 text-center w-44">
+            <div class="text-2xl mb-1">🌿</div>
+            <div class="font-bold text-green-700">LightGBM</div>
+            <div class="text-gray-500 text-xs mt-1">梯度提升决策树</div>
+            <div class="mt-3 space-y-2">
+              <div class="bg-white rounded-lg p-2 text-xs">
+                <div class="font-semibold text-orange-600">Model 1</div>
+                <div class="text-gray-500">人才是否投递</div>
+              </div>
+              <div class="bg-white rounded-lg p-2 text-xs">
+                <div class="font-semibold text-blue-600">Model 2</div>
+                <div class="text-gray-500">招聘方是否认可</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-8 grid md:grid-cols-2 gap-4 text-sm text-gray-600 bg-gray-50 rounded-xl p-4">
+          <div>
+            <span class="font-bold text-gray-800">前端（文本编码器）：</span>
+            chinese-RoBERTa-wwm-ext，包含 12 层 BertLayer，特征维度 768，12 个自注意力头，[CLS] 向量作为文本全局表示。
+          </div>
+          <div>
+            <span class="font-bold text-gray-800">后端（分类器）：</span>
+            LightGBM 决策树集成模型，使用 92 维特征向量，划分 7:3 训练/测试集，转化为二分类任务。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 实验结果 -->
+    <section id="results" class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span class="text-blue-600">04</span>
+        <span>实验结果</span>
+      </h2>
+
+      <!-- Table 1 -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-bold text-gray-800 text-lg mb-1">
+          Table 1 · 人才是否投递（Delivered）预测结果
+        </h3>
+        <p class="text-gray-500 text-sm mb-4">数据集：天池竞赛数据集，7:3 划分训练/测试集</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 border-b border-gray-200">
+                <th class="py-3 px-4 text-left font-semibold text-gray-600">预测模型</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Accuracy</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Precision</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Recall</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">F1</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">AUC</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">决策树 (DT)</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.771</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.339</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.541</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.405</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.709</td>
+              </tr>
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">随机森林 (RF)</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.842</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.722</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.829</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.771</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.839</td>
+              </tr>
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">XGBoost</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.870</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.814</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.834</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.823</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.836</td>
+              </tr>
+              <tr class="bg-green-50 hover:bg-green-100 transition-colors">
+                <td class="py-3 px-4 font-bold text-green-700">⭐ LightGBM</td>
+                <td class="py-3 px-4 text-center"><span class="metric-best">0.886</span></td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.776</td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.750</td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.760</td>
+                <td class="py-3 px-4 text-center"><span class="metric-best">0.848</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 2 -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-bold text-gray-800 text-lg mb-1">
+          Table 2 · 招聘者是否认可（Satisfied）预测结果
+        </h3>
+        <p class="text-gray-500 text-sm mb-4">LightGBM 在 Satisfied 任务上优势更明显</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 border-b border-gray-200">
+                <th class="py-3 px-4 text-left font-semibold text-gray-600">预测模型</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Accuracy</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Precision</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">Recall</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">F1</th>
+                <th class="py-3 px-4 text-center font-semibold text-gray-600">AUC</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">决策树 (DT)</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.877</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.766</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.740</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.750</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.844</td>
+              </tr>
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">随机森林 (RF)</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.899</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.737</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.842</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.785</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.896</td>
+              </tr>
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4 font-medium">XGBoost</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.925</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.812</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.866</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.836</td>
+                <td class="py-3 px-4 text-center text-gray-600">0.908</td>
+              </tr>
+              <tr class="bg-green-50 hover:bg-green-100 transition-colors">
+                <td class="py-3 px-4 font-bold text-green-700">⭐ LightGBM</td>
+                <td class="py-3 px-4 text-center"><span class="metric-best">0.926</span></td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.821</td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.867</td>
+                <td class="py-3 px-4 text-center font-bold text-green-700">0.840</td>
+                <td class="py-3 px-4 text-center"><span class="metric-best">0.919</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- AUC 图表 -->
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="card p-6">
+          <h3 class="font-bold text-gray-800 mb-4">AUC 对比（Delivered）</h3>
+          <canvas id="aucDeliveredChart" height="220"></canvas>
+        </div>
+        <div class="card p-6">
+          <h3 class="font-bold text-gray-800 mb-4">AUC 对比（Satisfied）</h3>
+          <canvas id="aucSatisfiedChart" height="220"></canvas>
+        </div>
+      </div>
+
+      <!-- AUC Table 3 -->
+      <div class="card p-6 mt-6">
+        <h3 class="font-bold text-gray-800 text-lg mb-4">Table 3 · 各模型 AUC 汇总</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-gray-50 rounded-xl p-4 text-center">
+            <div class="text-gray-500 text-sm mb-2">决策树 (DT)</div>
+            <div class="text-lg font-bold text-gray-700">0.709</div>
+            <div class="text-xs text-gray-400 mt-1">Delivered</div>
+            <div class="text-lg font-bold text-gray-700 mt-2">0.854</div>
+            <div class="text-xs text-gray-400">Satisfied</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-4 text-center">
+            <div class="text-gray-500 text-sm mb-2">随机森林 (RF)</div>
+            <div class="text-lg font-bold text-gray-700">0.839</div>
+            <div class="text-xs text-gray-400 mt-1">Delivered</div>
+            <div class="text-lg font-bold text-gray-700 mt-2">0.896</div>
+            <div class="text-xs text-gray-400">Satisfied</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-4 text-center">
+            <div class="text-gray-500 text-sm mb-2">XGBoost</div>
+            <div class="text-lg font-bold text-gray-700">0.836</div>
+            <div class="text-xs text-gray-400 mt-1">Delivered</div>
+            <div class="text-lg font-bold text-gray-700 mt-2">0.908</div>
+            <div class="text-xs text-gray-400">Satisfied</div>
+          </div>
+          <div class="bg-green-50 rounded-xl p-4 text-center border-2 border-green-300">
+            <div class="text-green-600 text-sm font-bold mb-2">⭐ LightGBM</div>
+            <div class="text-xl font-bold text-green-600">0.848</div>
+            <div class="text-xs text-gray-400 mt-1">Delivered</div>
+            <div class="text-xl font-bold text-green-600 mt-2">0.919</div>
+            <div class="text-xs text-gray-400">Satisfied</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 在线预测 -->
+    <section id="demo" class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+        <span class="text-blue-600">05</span>
+        <span>在线人岗匹配预测</span>
+      </h2>
+      <p class="text-gray-500 mb-6 text-sm">基于 BERT 语义特征 + LightGBM 分类器，输入岗位与求职者信息，获取匹配预测结果</p>
+
+      <div class="card p-6 md:p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+
+          <!-- 岗位信息 -->
+          <div>
+            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span class="bg-amber-100 text-amber-700 rounded-lg px-2 py-1 text-sm">岗位信息</span>
+            </h3>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">岗位要求描述</label>
+                <textarea id="jobText" rows="4" placeholder="请输入岗位要求，例如：负责后端系统开发，要求3年以上Python/Java开发经验，熟悉分布式系统和微服务架构，有大型互联网项目经验优先..."
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">薪资下限（K/月）</label>
+                  <input type="number" id="salaryMin" value="15" min="1"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">薪资上限（K/月）</label>
+                  <input type="number" id="salaryMax" value="25" min="1"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 求职者信息 -->
+          <div>
+            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span class="bg-teal-100 text-teal-700 rounded-lg px-2 py-1 text-sm">求职者信息</span>
+            </h3>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">工作经历描述</label>
+                <textarea id="resumeText" rows="4" placeholder="请输入工作经历，例如：5年后端开发经验，熟练使用Python/Go，主导过多个高并发系统设计，有电商平台百万QPS系统架构经验..."
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"></textarea>
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">最高学历</label>
+                  <select id="education" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="0">大专</option>
+                    <option value="1" selected>本科</option>
+                    <option value="2">硕士</option>
+                    <option value="3">博士</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">工作年限</label>
+                  <input type="number" id="workYears" value="3" min="0"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">期望薪资（K）</label>
+                  <input type="number" id="expectedSalary" value="20" min="1"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 示例填充按钮 -->
+        <div class="flex flex-wrap gap-2 mt-6 mb-4">
+          <span class="text-sm text-gray-500 font-medium">快速填入示例：</span>
+          <button onclick="fillExample('tech')" class="text-xs bg-blue-50 text-blue-600 rounded-full px-3 py-1 hover:bg-blue-100 transition-colors">💻 后端开发</button>
+          <button onclick="fillExample('data')" class="text-xs bg-purple-50 text-purple-600 rounded-full px-3 py-1 hover:bg-purple-100 transition-colors">📊 数据分析</button>
+          <button onclick="fillExample('mismatch')" class="text-xs bg-red-50 text-red-600 rounded-full px-3 py-1 hover:bg-red-100 transition-colors">❌ 不匹配示例</button>
+        </div>
+
+        <button id="predictBtn" onclick="predict()"
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl text-base transition-colors flex items-center justify-center gap-2">
+          <span>🔍</span>
+          <span>开始匹配预测</span>
+        </button>
+
+        <!-- 结果区域 -->
+        <div id="resultArea" class="mt-6 hidden">
+          <div class="border-t border-gray-100 pt-6">
+            <h4 class="font-bold text-gray-800 mb-4">预测结果</h4>
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+              <div id="deliveredCard" class="result-card rounded-xl p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <span class="font-semibold text-gray-700">人才投递意愿</span>
+                  <span id="deliveredIcon" class="text-2xl"></span>
+                </div>
+                <div id="deliveredLabel" class="text-xl font-bold mb-2"></div>
+                <div class="progress-bar mb-1">
+                  <div id="deliveredBar" class="progress-fill bg-blue-500" style="width:0%"></div>
+                </div>
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>不会投递</span>
+                  <span id="deliveredProb" class="font-medium text-gray-600"></span>
+                  <span>会投递</span>
+                </div>
+              </div>
+
+              <div id="satisfiedCard" class="result-card rounded-xl p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <span class="font-semibold text-gray-700">招聘方认可度</span>
+                  <span id="satisfiedIcon" class="text-2xl"></span>
+                </div>
+                <div id="satisfiedLabel" class="text-xl font-bold mb-2"></div>
+                <div class="progress-bar mb-1">
+                  <div id="satisfiedBar" class="progress-fill bg-green-500" style="width:0%"></div>
+                </div>
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>不会认可</span>
+                  <span id="satisfiedProb" class="font-medium text-gray-600"></span>
+                  <span>会认可</span>
+                </div>
+              </div>
+            </div>
+            <div id="modelNote" class="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2"></div>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loadingArea" class="mt-6 hidden text-center py-8">
+          <div class="text-4xl mb-3">🤖</div>
+          <div class="text-gray-600 font-medium">
+            正在用 BERT 提取语义特征
+            <span class="loading-dots">
+              <span>.</span><span>.</span><span>.</span>
+            </span>
+          </div>
+          <div class="text-gray-400 text-sm mt-1">首次运行需要加载模型，约 30-60 秒</div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="errorArea" class="mt-6 hidden bg-red-50 border border-red-200 rounded-xl p-4">
+          <div class="text-red-700 font-medium">⚠️ 预测失败</div>
+          <div id="errorMsg" class="text-red-600 text-sm mt-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 结论 -->
+    <section class="section-anchor">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        <span class="text-blue-600">06</span>
+        <span>结论</span>
+      </h2>
+      <div class="card p-6">
+        <div class="flex gap-4">
+          <div class="w-1 bg-blue-600 rounded-full flex-shrink-0"></div>
+          <p class="text-gray-600 leading-relaxed">
+            本文将 BERT 模型引入到人岗匹配领域，采用 <strong>chinese-RoBERTa-wwm-ext</strong> 提取文本语义特征，结合 <strong>LightGBM</strong> 分类器，有效融合了语义相似度与结构化特征，成功规避了过拟合现象。在人才是否投递模型中精确度达到 <strong>0.886</strong>，在岗位是否认可模型中精确度达到 <strong>0.926</strong>，均优于决策树、随机森林、XGBoost 等基线方法，验证了 BERT+LightGBM 组合在人岗匹配任务上的有效性。
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-gray-800 text-gray-400 py-8 mt-16">
+    <div class="max-w-6xl mx-auto px-4 text-center">
+      <p class="text-sm">
+        论文复现展示 · 《基于BERT与LightGBM的人岗匹配模型》· 计算机科学与应用 2025
+      </p>
+      <p class="text-xs mt-2">
+        DOI: 10.12677/csa.2025.151006 &nbsp;|&nbsp; 段雪艳, 吕卫东, 冯俊磊, 郝月华
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    // ============================================================
+    // HuggingFace Spaces 后端 API 地址
+    // 部署后请将下面的 URL 替换为你的实际 HF Spaces 地址
+    // 格式：https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space
+    // ============================================================
+    const HF_SPACES_URL = "https://zhao12138666-person-job-matching.hf.space";
+
+    // 示例数据
+    const examples = {
+      tech: {
+        jobText: "负责公司后端系统的开发与维护，要求3年以上Python/Java开发经验，熟悉微服务架构、Redis、MySQL，了解分布式系统设计，有高并发系统经验优先，能够独立完成模块设计和开发。",
+        resumeText: "4年后端开发经验，熟练使用Python和Java，主导过多个微服务架构项目，熟练使用Redis、MySQL、Kafka，有电商平台50万QPS系统设计经验，能独立承担核心模块开发。",
+        salaryMin: 18, salaryMax: 28, education: "1", workYears: 4, expectedSalary: 22
+      },
+      data: {
+        jobText: "负责数据分析和报表开发，要求熟悉Python/SQL，有数据仓库建设经验，了解机器学习基础，能独立完成数据分析报告，熟悉Tableau/PowerBI等可视化工具。",
+        resumeText: "3年数据分析师经验，擅长Python数据分析（Pandas/Sklearn），具备完整数据仓库建设经验，熟练使用SQL和Tableau，有金融行业数据分析背景，发表过2篇数据挖掘相关论文。",
+        salaryMin: 12, salaryMax: 20, education: "2", workYears: 3, expectedSalary: 15
+      },
+      mismatch: {
+        jobText: "招聘高级Java架构师，要求10年以上Java开发经验，精通分布式架构、大数据处理，有千万级用户系统设计经验，月薪40-60K。",
+        resumeText: "应届毕业生，学过Java基础课程，有一个校园管理系统项目经验，希望找到稳定工作，对薪资要求不高，大约8-10K。",
+        salaryMin: 40, salaryMax: 60, education: "1", workYears: 0, expectedSalary: 9
+      }
+    };
+
+    function fillExample(type) {
+      const ex = examples[type];
+      document.getElementById('jobText').value = ex.jobText;
+      document.getElementById('resumeText').value = ex.resumeText;
+      document.getElementById('salaryMin').value = ex.salaryMin;
+      document.getElementById('salaryMax').value = ex.salaryMax;
+      document.getElementById('education').value = ex.education;
+      document.getElementById('workYears').value = ex.workYears;
+      document.getElementById('expectedSalary').value = ex.expectedSalary;
+    }
+
+    async function predict() {
+      const jobText = document.getElementById('jobText').value.trim();
+      const resumeText = document.getElementById('resumeText').value.trim();
+
+      if (!jobText || !resumeText) {
+        alert('请填写岗位要求描述和工作经历描述');
+        return;
+      }
+
+      const payload = {
+        job_text: jobText,
+        resume_text: resumeText,
+        education: parseInt(document.getElementById('education').value),
+        work_years: parseInt(document.getElementById('workYears').value),
+        expected_salary: parseInt(document.getElementById('expectedSalary').value),
+        job_salary_min: parseInt(document.getElementById('salaryMin').value),
+        job_salary_max: parseInt(document.getElementById('salaryMax').value),
+      };
+
+      // 显示 loading
+      document.getElementById('resultArea').classList.add('hidden');
+      document.getElementById('errorArea').classList.add('hidden');
+      document.getElementById('loadingArea').classList.remove('hidden');
+      document.getElementById('predictBtn').disabled = true;
+
+      try {
+        const response = await fetch(`${HF_SPACES_URL}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error(`服务器返回 ${response.status}，请确认 HF Spaces 已正常启动`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+          throw new Error(data.detail || '预测失败');
+        }
+
+        showResult(data.data);
+      } catch (err) {
+        document.getElementById('loadingArea').classList.add('hidden');
+        document.getElementById('errorArea').classList.remove('hidden');
+        document.getElementById('errorMsg').textContent = err.message + 
+          '\n提示：请先部署 HuggingFace Spaces 后端，并在代码中更新 HF_SPACES_URL';
+      } finally {
+        document.getElementById('predictBtn').disabled = false;
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById('loadingArea').classList.add('hidden');
+      document.getElementById('resultArea').classList.remove('hidden');
+
+      const deliveredProb = data.delivered_prob;
+      const satisfiedProb = data.satisfied_prob;
+      const isDelivered = deliveredProb >= 0.5;
+      const isSatisfied = satisfiedProb >= 0.5;
+
+      // 投递预测
+      const deliveredCard = document.getElementById('deliveredCard');
+      deliveredCard.className = `result-card rounded-xl p-5 ${isDelivered ? 'positive' : 'negative'}`;
+      document.getElementById('deliveredIcon').textContent = isDelivered ? '✅' : '❌';
+      document.getElementById('deliveredLabel').textContent = data.delivered_label;
+      document.getElementById('deliveredLabel').className = `text-xl font-bold mb-2 ${isDelivered ? 'text-green-700' : 'text-red-600'}`;
+      document.getElementById('deliveredProb').textContent = `${(deliveredProb * 100).toFixed(1)}%`;
+      setTimeout(() => {
+        document.getElementById('deliveredBar').style.width = `${deliveredProb * 100}%`;
+        document.getElementById('deliveredBar').className = `progress-fill ${isDelivered ? 'bg-green-500' : 'bg-red-400'}`;
+      }, 100);
+
+      // 认可预测
+      const satisfiedCard = document.getElementById('satisfiedCard');
+      satisfiedCard.className = `result-card rounded-xl p-5 ${isSatisfied ? 'positive' : 'negative'}`;
+      document.getElementById('satisfiedIcon').textContent = isSatisfied ? '✅' : '❌';
+      document.getElementById('satisfiedLabel').textContent = data.satisfied_label;
+      document.getElementById('satisfiedLabel').className = `text-xl font-bold mb-2 ${isSatisfied ? 'text-green-700' : 'text-red-600'}`;
+      document.getElementById('satisfiedProb').textContent = `${(satisfiedProb * 100).toFixed(1)}%`;
+      setTimeout(() => {
+        document.getElementById('satisfiedBar').style.width = `${satisfiedProb * 100}%`;
+        document.getElementById('satisfiedBar').className = `progress-fill ${isSatisfied ? 'bg-green-500' : 'bg-red-400'}`;
+      }, 100);
+
+      document.getElementById('modelNote').textContent = `使用模型：${data.model_note}`;
+    }
+
+    // ============================================================
+    // Chart.js 图表：AUC 对比
+    // ============================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      const labels = ['决策树', '随机森林', 'XGBoost', 'LightGBM'];
+      const colors = ['#94a3b8', '#64748b', '#3b82f6', '#10b981'];
+      
+      // Delivered AUC
+      new Chart(document.getElementById('aucDeliveredChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'AUC (Delivered)',
+            data: [0.709, 0.839, 0.836, 0.848],
+            backgroundColor: colors,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { min: 0.6, max: 0.9, ticks: { callback: v => v.toFixed(2) } }
+          }
+        }
+      });
+
+      // Satisfied AUC
+      new Chart(document.getElementById('aucSatisfiedChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'AUC (Satisfied)',
+            data: [0.854, 0.896, 0.908, 0.919],
+            backgroundColor: colors,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { min: 0.7, max: 1.0, ticks: { callback: v => v.toFixed(2) } }
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>

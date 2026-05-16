@@ -656,14 +656,20 @@
         return;
       }
 
+      const eduMap = {"0": "大专", "1": "本科", "2": "硕士", "3": "博士"};
+      const educationStr = eduMap[document.getElementById('education').value] || "本科";
+
+      // Gradio API 调用格式
       const payload = {
-        job_text: jobText,
-        resume_text: resumeText,
-        education: parseInt(document.getElementById('education').value),
-        work_years: parseInt(document.getElementById('workYears').value),
-        expected_salary: parseInt(document.getElementById('expectedSalary').value),
-        job_salary_min: parseInt(document.getElementById('salaryMin').value),
-        job_salary_max: parseInt(document.getElementById('salaryMax').value),
+        data: [
+          jobText,
+          resumeText,
+          educationStr,
+          parseInt(document.getElementById('workYears').value),
+          parseInt(document.getElementById('expectedSalary').value),
+          parseInt(document.getElementById('salaryMin').value),
+          parseInt(document.getElementById('salaryMax').value),
+        ]
       };
 
       // 显示 loading
@@ -673,28 +679,25 @@
       document.getElementById('predictBtn').disabled = true;
 
       try {
-        const response = await fetch(`${HF_SPACES_URL}/predict`, {
+        const response = await fetch(`${HF_SPACES_URL}/run/predict`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
-          throw new Error(`服务器返回 ${response.status}，请确认 HF Spaces 已正常启动`);
+          throw new Error(`服务器返回 ${response.status}，HF Spaces 可能正在启动中（约60秒），请稍后重试`);
         }
 
-        const data = await response.json();
-        
-        if (!data.success) {
-          throw new Error(data.detail || '预测失败');
-        }
-
-        showResult(data.data);
+        const resp = await response.json();
+        // Gradio 返回格式: { data: [delivered_text, satisfied_text, note, json_str] }
+        const [deliveredText, satisfiedText, noteText, jsonStr] = resp.data;
+        const data = JSON.parse(jsonStr);
+        showResult(data);
       } catch (err) {
         document.getElementById('loadingArea').classList.add('hidden');
         document.getElementById('errorArea').classList.remove('hidden');
-        document.getElementById('errorMsg').textContent = err.message + 
-          '\n提示：请先部署 HuggingFace Spaces 后端，并在代码中更新 HF_SPACES_URL';
+        document.getElementById('errorMsg').textContent = err.message;
       } finally {
         document.getElementById('predictBtn').disabled = false;
       }

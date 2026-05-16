@@ -658,19 +658,7 @@
 
       const eduMap = {"0": "大专", "1": "本科", "2": "硕士", "3": "博士"};
       const educationStr = eduMap[document.getElementById('education').value] || "本科";
-
-      // Gradio API 调用格式
-      const payload = {
-        data: [
-          jobText,
-          resumeText,
-          educationStr,
-          parseInt(document.getElementById('workYears').value),
-          parseInt(document.getElementById('expectedSalary').value),
-          parseInt(document.getElementById('salaryMin').value),
-          parseInt(document.getElementById('salaryMax').value),
-        ]
-      };
+      const sessionHash = Math.random().toString(36).slice(2, 12);
 
       // 显示 loading
       document.getElementById('resultArea').classList.add('hidden');
@@ -679,21 +667,67 @@
       document.getElementById('predictBtn').disabled = true;
 
       try {
-        const response = await fetch(`${HF_SPACES_URL}/run/predict`, {
+        // Gradio 5.x SSE 队列调用：第一步 POST 加入队列
+        const joinResp = await fetch(`${HF_SPACES_URL}/gradio_api/queue/join`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            fn_index: 0,
+            session_hash: sessionHash,
+            data: [
+              jobText, resumeText, educationStr,
+              parseInt(document.getElementById('workYears').value),
+              parseInt(document.getElementById('expectedSalary').value),
+              parseInt(document.getElementById('salaryMin').value),
+              parseInt(document.getElementById('salaryMax').value),
+            ]
+          }),
         });
 
-        if (!response.ok) {
-          throw new Error(`服务器返回 ${response.status}，HF Spaces 可能正在启动中（约60秒），请稍后重试`);
+        if (!joinResp.ok) {
+          throw new Error(`HF Spaces 返回 ${joinResp.status}，服务可能正在启动中，请稍后重试`);
         }
 
-        const resp = await response.json();
-        // Gradio 返回格式: { data: [delivered_text, satisfied_text, note, json_str] }
-        const [deliveredText, satisfiedText, noteText, jsonStr] = resp.data;
-        const data = JSON.parse(jsonStr);
+        const { event_id } = await joinResp.json();
+
+        // 第二步：通过 SSE 流获取结果
+        const result = await new Promise((resolve, reject) => {
+          const dataUrl = `${HF_SPACES_URL}/gradio_api/queue/data?session_hash=${sessionHash}`;
+          const evtSource = new EventSource(dataUrl);
+          const timeout = setTimeout(() => {
+            evtSource.close();
+            reject(new Error('预测超时（120秒），请稍后重试'));
+          }, 120000);
+
+          evtSource.onmessage = (e) => {
+            try {
+              const msg = JSON.parse(e.data);
+              if (msg.msg === 'process_completed' && msg.event_id === event_id) {
+                clearTimeout(timeout);
+                evtSource.close();
+                if (msg.success && msg.output && msg.output.data) {
+                  resolve(msg.output.data);
+                } else {
+                  reject(new Error('预测失败：' + JSON.stringify(msg.output)));
+                }
+              } else if (msg.msg === 'close_stream') {
+                clearTimeout(timeout);
+                evtSource.close();
+              }
+            } catch(err) { /* 忽略解析错误 */ }
+          };
+
+          evtSource.onerror = () => {
+            clearTimeout(timeout);
+            evtSource.close();
+            reject(new Error('连接 HF Spaces 失败，请确认服务已启动'));
+          };
+        });
+
+        // result = [delivered_text, satisfied_text, note, json_str]
+        const data = JSON.parse(result[3]);
         showResult(data);
+
       } catch (err) {
         document.getElementById('loadingArea').classList.add('hidden');
         document.getElementById('errorArea').classList.remove('hidden');

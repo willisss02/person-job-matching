@@ -377,6 +377,21 @@
       <!-- 本次复现结果 -->
       <div class="card p-6 mb-6 border-2 border-blue-200">
         <h3 class="font-bold text-blue-700 text-lg mb-4">本次复现结果（10K样本 + PCA64 + 融合模式）</h3>
+        <div class="grid md:grid-cols-3 gap-4 mb-4">
+          <div class="bg-blue-50 rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-blue-600">91.7%</div>
+            <div class="text-gray-500 text-sm mt-1">Delivered Accuracy</div>
+          </div>
+          <div class="bg-green-50 rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-green-600">83.3%</div>
+            <div class="text-gray-500 text-sm mt-1">Satisfied Accuracy</div>
+          </div>
+          <div class="bg-purple-50 rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-purple-600">0.886</div>
+            <div class="text-gray-500 text-sm mt-1">Satisfied AUC</div>
+          </div>
+        </div>
+        <p class="text-gray-500 text-xs mb-4">基于12个系统性测试案例的评估结果（5匹配+5不匹配+2边界）</p>
         <div class="grid md:grid-cols-2 gap-4">
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="font-bold text-gray-800 mb-2">LightGBM 单独指标</div>
@@ -387,13 +402,47 @@
             <div class="text-xs text-gray-400 mt-2">特征：PCA64×2 + 21结构化 + 余弦相似度 = 150维</div>
           </div>
           <div class="bg-green-50 rounded-xl p-4">
-            <div class="font-bold text-gray-800 mb-2">融合模式实际预测效果</div>
+            <div class="font-bold text-gray-800 mb-2">融合模式评估指标</div>
             <div class="text-sm text-gray-600 space-y-1">
-              <div>后端开发 vs 后端开发: <strong class="text-green-600">✅ 会投递 87%</strong></div>
-              <div>测试工程师 vs 数据分析: <strong class="text-red-600">❌ 不会投递 39%</strong></div>
+              <div>Delivered: ACC=91.7% | Prec=85.7% | Rec=100% | F1=92.3% | AUC=1.000</div>
+              <div>Satisfied: ACC=83.3% | Prec=71.4% | Rec=100% | F1=83.3% | AUC=0.886</div>
             </div>
-            <div class="text-xs text-gray-400 mt-2">定性判断正确，概率由融合公式计算</div>
+            <div class="text-xs text-gray-400 mt-2">12个测试案例：5匹配全正确，5不匹配全正确，2边界1正确1偏</div>
           </div>
+        </div>
+      </div>
+
+      <!-- 匹配案例 -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-bold text-green-700 text-lg mb-4">匹配案例测试结果（5/5 正确）</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="bg-green-50 border-b"><th class="py-2 px-3 text-left">测试案例</th><th class="py-2 px-3 text-center">余弦值</th><th class="py-2 px-3 text-center">投递预测</th><th class="py-2 px-3 text-center">认可预测</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr><td class="py-2 px-3">后端开发匹配</td><td class="py-2 px-3 text-center">0.931</td><td class="py-2 px-3 text-center text-green-600">✅ 86.3%</td><td class="py-2 px-3 text-center text-green-600">✅ 61.5%</td></tr>
+              <tr><td class="py-2 px-3">数据分析匹配</td><td class="py-2 px-3 text-center">0.929</td><td class="py-2 px-3 text-center text-green-600">✅ 85.4%</td><td class="py-2 px-3 text-center text-green-600">✅ 62.3%</td></tr>
+              <tr><td class="py-2 px-3">前端开发匹配</td><td class="py-2 px-3 text-center">0.970</td><td class="py-2 px-3 text-center text-green-600">✅ 90.3%</td><td class="py-2 px-3 text-center text-green-600">✅ 65.2%</td></tr>
+              <tr><td class="py-2 px-3">产品经理匹配</td><td class="py-2 px-3 text-center">0.948</td><td class="py-2 px-3 text-center text-green-600">✅ 90.3%</td><td class="py-2 px-3 text-center text-green-600">✅ 62.0%</td></tr>
+              <tr><td class="py-2 px-3">UI设计匹配</td><td class="py-2 px-3 text-center">0.945</td><td class="py-2 px-3 text-center text-green-600">✅ 88.2%</td><td class="py-2 px-3 text-center text-green-600">✅ 58.0%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 不匹配案例 -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-bold text-red-600 text-lg mb-4">不匹配案例测试结果（5/5 正确）</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="bg-red-50 border-b"><th class="py-2 px-3 text-left">测试案例</th><th class="py-2 px-3 text-center">余弦值</th><th class="py-2 px-3 text-center">投递预测</th><th class="py-2 px-3 text-center">认可预测</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr><td class="py-2 px-3">测试工程师 vs 数据分析</td><td class="py-2 px-3 text-center">0.763</td><td class="py-2 px-3 text-center text-red-600">❌ 39.2%</td><td class="py-2 px-3 text-center text-red-600">❌ 33.0%</td></tr>
+              <tr><td class="py-2 px-3">架构师 vs 应届生</td><td class="py-2 px-3 text-center">0.847</td><td class="py-2 px-3 text-center text-red-600">❌ 30.6%</td><td class="py-2 px-3 text-center text-red-600">❌ 35.5%</td></tr>
+              <tr><td class="py-2 px-3">算法工程师 vs PHP前端</td><td class="py-2 px-3 text-center">0.797</td><td class="py-2 px-3 text-center text-red-600">❌ 15.5%</td><td class="py-2 px-3 text-center text-red-600">❌ 25.1%</td></tr>
+              <tr><td class="py-2 px-3">财务总监 vs 程序员</td><td class="py-2 px-3 text-center">0.843</td><td class="py-2 px-3 text-center text-red-600">❌ 28.4%</td><td class="py-2 px-3 text-center text-red-600">❌ 27.7%</td></tr>
+              <tr><td class="py-2 px-3">运维工程师 vs UI设计师</td><td class="py-2 px-3 text-center">0.753</td><td class="py-2 px-3 text-center text-red-600">❌ 8.7%</td><td class="py-2 px-3 text-center text-red-600">❌ 20.9%</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
